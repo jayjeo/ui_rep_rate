@@ -1,0 +1,6 @@
+
+data_path:
+  cps: "~/repo/data_cps/data/"
+  SIPP: "~/repo/data_SIPP/data"
+
+lab_code: "../lab_code/"
