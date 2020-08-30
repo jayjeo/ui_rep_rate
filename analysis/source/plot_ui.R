@@ -1,21 +1,7 @@
-library(quantreg)
-library(tidyverse)
-library(lubridate)
-library(yaml)
-library(rprojroot)
-library("RColorBrewer")
+source("analysis/source/prelim.R")
+
+
 library(gt)
-
-matches <- dplyr::matches
-
-make_path <- is_git_root$make_fix_file("~/repo/covid_inc_sprt/") #nolint
-out_path <- str_c(make_path(), "/analysis/release/")
-out_table_path <- str_c(out_path, "stats_in_figures/")
-
-setwd(make_path("./"))
-config <- yaml.load_file(make_path("analysis/config.yml"))
-
-source(paste0(config$lab_code, "prelim.R"))
 
 #the benefits calculator is written in python.
 #we call the calculator in R using the reticulate package
@@ -26,47 +12,23 @@ library(reticulate)
 #if (Sys.getenv()[["USER"]] == "peterganong") {
 #  use_condaenv()
 #} else {
-use_condaenv("C:\\Users\\probert2\\AppData\\Local\\Continuum\\anaconda3\\envs\\for_calc", required = TRUE)
 
+if(Sys.getenv()[["USERNAME"]] == "rosha"){
+use_condaenv("C:\\Users\\rosha\\anaconda3\\envs\\for_calc", required = TRUE)
+} else {
+  use_condaenv("C:\\Users\\probert2\\AppData\\local\\Continuum\\anaconda3\\envs\\for_calc",
+               required = TRUE)
+}
 #}
 setwd("../ui_calculator/")
 source_python("source/ui_calculator.py")
 setwd(make_path("./"))
-
-generate_robustness <- FALSE
-run_bootstrap <- FALSE
-
 
 stats_for_text <- tibble(stat_name = character(),
                          stat_value = numeric())
 
 palette <- RColorBrewer::brewer.pal(6, "Blues")
 
-names <- c("1a", "1b", "2", "3a", "3b", "4", "A1", "A2")
-
-plot_list <- list()
-length(plot_list) <- length(names)
-names(plot_list) <- names
-
-occupation_codes <- tribble(
-  ~code, ~occupation,
-  "00", "Managers",
-  "01", "Managers",
-  "02", "Managers",
-  "03", "Managers",
-  "04", "Managers",
-  "47", "Sales & retail",
-  "23", "Teachers",
-  "36", "Medical assistants",
-  "91", "Transport",
-  "40", "Food service",
-  "41", "Food service",
-  "32", "Nurses & therapists",
-  "10", "IT",
-  "42", "Janitors",
-  "62", "Construction",
-  "54", "Receptionist"
-)
 
 
 cpi_u <- read_csv("analysis/input/CPIAUCSL.csv") %>%
@@ -76,34 +38,9 @@ cpi_u <- read_csv("analysis/input/CPIAUCSL.csv") %>%
             adjustment = last(CPIAUCSL)/CPIAUCSL)
 
 
-code_industries <- function(IND) {case_when(
-  IND %in% seq(170,290) ~ 1,
-  IND %in% seq(370,490) ~ 2,
-  IND == 770 ~ 3,
-  IND %in% seq(1070,3990) ~ 4,
-  IND %in% seq(4070,5790) ~ 5,
-  (IND %in% seq(6070,6390) | IND %in% seq(570,690)) ~ 6,
-  IND %in% seq(6470,6780) ~ 7,
-  IND %in% seq(6870,7190) ~ 8,
-  IND %in% seq(7270,7790) ~ 9,
-  IND %in% seq(7860,8470) ~ 10,
-  IND %in% seq(8560,8690) ~ 11,
-  IND %in% 8770:9290 ~ 12,
-  IND %in% 9370:9590 ~ 13,
-  IND == 9890 ~ 14,
-  TRUE ~ 15 #Add other code
-)}
 
 #### Read in data ####
 
-fips_codes <- maps::state.fips %>%
-  select(fips,
-         state = abb) %>%
-  select(STATEFIP = fips, state) %>%
-  distinct() %>%
-  bind_rows(tibble(state = c("HI", "AK"),
-                   STATEFIP = c(15, 02))) %>%
-  filter(state != "DC")
 
 state_pop <- readxl::read_xlsx("analysis/input/population.xlsx", skip = 3) %>%
   select(state = ...1, pop = `2018`) %>%
@@ -115,7 +52,7 @@ state_pop <- readxl::read_xlsx("analysis/input/population.xlsx", skip = 3) %>%
          pop = pop)
 
 worker_citizen_instate <-
-  read_csv("../data_ipums/covid/ASEC_1719.csv.gz") %>%
+  read_csv("analysis/input/ASEC_1719.csv.gz") %>%
   filter(INCWAGE < 99999998,
          INCWAGE > 0,
          CITIZEN != 5) %>%
@@ -296,6 +233,12 @@ medians_and_shares_over <- wages_logit_weights  %>%
             share_over_two = sum(weight*(replacement_rate > 2))/sum(weight),
             median = Hmisc::wtd.quantile(replacement_rate, weights = weight, probs = 0.5))
 
+
+wages_unadjusted %>%
+  filter(wage >= 25000,
+         wage < 35000) %>%
+  summarise(Hmisc::wtd.mean(wage == 30000, weight))
+
 ### Get summary stats from main spec for robustness table
 
 
@@ -374,9 +317,7 @@ wages_2017 %>%
   write_csv("analysis/release/shares_industries.csv")
 
 
-if(generate_robustness){
-  source("analysis/source/generate_robustness_table.R")
-}
+source("analysis/source/generate_robustness_table.R")
 
 
 ####  Histogram of incomes ####
@@ -446,8 +387,6 @@ histogram <- wages_logit_weights %>%
 ggsave("analysis/release/income_distribution.png",
        histogram,
        width = 8, height = 4.5)
-
-plot_list$`1a` <- histogram
 
 
 #### Plot of Nevada benefits #####
@@ -607,9 +546,6 @@ ggsave("analysis/release/national_benefits.png",
        schedule_plot,
        width = 8, height = 4.5)
 
-plot_list$`2` <- schedule_plot
-
-
 
 #### Weekly earnings quantile plot ####
 
@@ -633,7 +569,7 @@ replacement_rate_by_decile <- wages_logit_weights  %>%
                values_to = "replacement_rate", names_prefix = "replacement_rate_")
 
 replacement_rate_by_decile %>%
-  write_csv(str_c(out_table_path, "fig3_rep_rate_prior_earnings.csv"))
+  write_csv(str_c(out_table_path, "rep_rate_prior_earnings.csv"))
 
 decile_plot_FPUC <- replacement_rate_by_decile %>%
   filter(type %in% c("FPUC", "Jan")) %>%
@@ -660,8 +596,6 @@ ggsave("analysis/release/quantile_plot_FPUC.png",
        decile_plot_FPUC,
        width = 8, height = 4.5)
 
-plot_list$`3a` <- decile_plot_FPUC
-
 
 #### Now  plot by occupation ####
 median_occupation_with_benefits <- wages_logit_weights %>%
@@ -674,7 +608,7 @@ median_occupation_with_benefits <- wages_logit_weights %>%
 
 
 median_occupation_with_benefits %>%
-  write_csv(str_c(out_table_path, "fig4_rep_rate_occ.csv"))
+  write_csv(str_c(out_table_path, "rep_rate_occ.csv"))
 
 median_occupation_with_benefits_for_graph <-
   median_occupation_with_benefits %>%
@@ -705,8 +639,6 @@ median_occupations <- median_occupation_with_benefits_for_graph %>%
 ggsave("analysis/release/occupation_at_median.png",
        median_occupations,
        width = 8, height = 4.5)
-
-plot_list$`3b` <- median_occupations
 
 median_industries_with_benefits_for_graph <-
   wages_logit_weights %>%
@@ -847,10 +779,6 @@ ggsave("analysis/release/lump_sum_area.png",
        width = 8, height = 4.5)
 
 
-plot_list$`4` <- lump_sum_area
-
-
-
 
 
 fixed_stats <- calc_replacement_shares(wages_logit_weights, "fixed", 300) %>%
@@ -913,7 +841,7 @@ state_values <- wages_logit_weights %>%
          rr_no_fpuc = replacement_rate_Jan)
 
 
-standard_errors <- read_csv("analysis/input/bootstrap.csv") %>%
+standard_errors <- read_csv("analysis/input/bootstrap_output.csv") %>%
   filter(!is.na(state)) %>%
   select(-quantile) %>%
   group_by(type, state) %>%
@@ -992,7 +920,7 @@ state_values %>%
   write_lines(str_c("analysis/release/state_table.tex"))
 
 state_values %>%
-  write_csv(str_c(out_table_path, "fig5_rep_rate_state.csv"))
+  write_csv(str_c(out_table_path, "rep_rate_state.csv"))
 
 
 spdf <- geojsonio::geojson_read("analysis/input/us_states_hexgrid.geojson",  what = "sp")
@@ -1034,7 +962,6 @@ ggsave("analysis/release/states_map_discrete.png",
        benefits_map,
        width = 8, height = 4.5)
 
-plot_list$`A2` <- benefits_map
 
 #### Benchmark ####
 ### Benchmark Payments ####
@@ -1145,10 +1072,6 @@ print(benchmarks)
 ggsave("analysis/release/benchmarks.png",
        benchmarks,
        width = 4.5, height = 4.5)
-
-
-plot_list$`A1` <- benchmarks
-
 
 
 prepandemic <- read_csv("analysis/input/ar5159.csv") %>%
@@ -1432,8 +1355,6 @@ incidence_by_group <- function(data, group_name) {
     left_join(FRED_unemp) %>%
     transmute(year, rescaling = unemp_rate_fred/ue)
 
-  print(ue_est)
-
   total_payout_all_reciept <- data %>%
     left_join(ue_est) %>%
     group_by(year, date) %>%
@@ -1451,9 +1372,6 @@ incidence_by_group <- function(data, group_name) {
     transmute(date,
               recipiency_rate = actual_amount/full_claim_amount,
               recipiency_rate_other = weeks_paid/full_weeks_claimed)
-
-  print(recipiency_rates)
-
 
   if (group_name == "occupation") {
    recipiency_stats <<- recipiency_rates %>%
@@ -1583,5 +1501,9 @@ map2(incidence_tables,
        str_replace_all("longtable", "tabular") %>%
        write_lines(str_c("analysis/release/", .y, ".tex")))
 
-stats_for_text <- rbind(stats_for_text, recipiency_stats)
+stats_for_text <- bind_rows(list(stats_for_text, recipiency_stats,
+                                 mutate_all(median_variance, as.character),
+                                 mutate_all(tipped_wage, as.character)
+                                 )
+                            )
 write_csv(stats_for_text, "analysis/release/stats_for_text.csv")

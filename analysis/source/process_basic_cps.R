@@ -1,74 +1,7 @@
-library(reticulate)
-library(quantreg)
-library(tidyverse)
-library(lubridate)
-library(yaml)
-library(rprojroot)
-library("RColorBrewer")
-matches <- dplyr::matches
-
-make_path <- is_git_root$make_fix_file("~/repo/covid_inc_sprt/") #nolint
-setwd(make_path("./"))
-config <- yaml.load_file(make_path("analysis/config.yml"))
-
-source(paste0(config$lab_code, "prelim.R"))
-
-library(haven)
-
-library(furrr)
-plan(multiprocess)
+source("analysis/source/prelim.R")
 
 
-fips_codes <- maps::state.fips %>%
-  select(fips,
-         state = abb) %>%
-  select(STATEFIP = fips, state) %>%
-  distinct() %>%
-  bind_rows(tibble(state = c("HI", "AK"),
-                   STATEFIP = c(15, 02))) %>%
-  filter(state != "DC")
-
-occupation_codes <- tribble(
-  ~code, ~occupation,
-  "00", "Managers",
-  "01", "Managers",
-  "02", "Managers",
-  "03", "Managers",
-  "04", "Managers",
-  "47", "Sales & retail",
-  "23", "Teachers",
-  "36", "Medical assistants",
-  "91", "Transport",
-  "40", "Food service",
-  "41", "Food service",
-  "32", "Nurses & therapists",
-  "10", "IT",
-  "42", "Janitors",
-  "62", "Construction",
-  "54", "Receptionist"
-)
-
-
-code_industries <- function(IND) {case_when(
-  IND %in% seq(170,290) ~ 1,
-  IND %in% seq(370,490) ~ 2,
-  IND == 770 ~ 3,
-  IND %in% seq(1070,3990) ~ 4,
-  IND %in% seq(4070,5790) ~ 5,
-  (IND %in% seq(6070,6390) | IND %in% seq(570,690)) ~ 6,
-  IND %in% seq(6470,6780) ~ 7,
-  IND %in% seq(6870,7190) ~ 8,
-  IND %in% seq(7270,7790) ~ 9,
-  IND %in% seq(7860,8470) ~ 10,
-  IND %in% seq(8560,8690) ~ 11,
-  IND %in% 8770:9290 ~ 12,
-  IND %in% 9370:9590 ~ 13,
-  IND == 9890 ~ 14,
-  TRUE ~ 15 #Add other code
-)}
-
-
-morg <-  read_csv("../data_ipums/covid/basic_cps.csv.gz")
+morg <-  read_csv("analysis/input/basic_cps.csv.gz")
 
 CPS_unemployment <- morg %>%
   inner_join(fips_codes) %>%
@@ -201,7 +134,7 @@ write_csv(for_plot, "analysis/release/logit_data.csv")
 
 #reload in the data
 
-cps <-  read_csv("../data_ipums/covid/basic_cps.csv.gz") %>%
+cps <-  read_csv("analysis/input/basic_cps.csv.gz") %>%
   filter(MONTH == 5) %>%
   mutate(unemployed = ifelse(EMPSTAT %in% seq(20, 22), 1 ,0),
          in_lf = ifelse(LABFORCE == 2, 1, 0),
@@ -209,7 +142,7 @@ cps <-  read_csv("../data_ipums/covid/basic_cps.csv.gz") %>%
   filter(YEAR %in% c(2019, 2020))
 
 
-prior_earnings <- read_csv("../data_ipums/covid/basic_cps.csv.gz") %>%
+prior_earnings <- read_csv("analysis/input/basic_cps.csv.gz") %>%
   filter(MONTH %in% c(5, 6, 7, 8),
          YEAR %in% c(2018, 2019),
          EARNWEEK > 0,

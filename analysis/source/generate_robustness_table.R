@@ -12,11 +12,6 @@ sum_stat <- function(quantiles, rep_rate, weight){
   return(output)
 }
 
-library(furrr)
-plan(multiprocess)
-
-
-
 robustness_regular <- wages_logit_weights %>%
   summarise(type = "Main estimate",
             statistic = c(rep("Quantile", 3), "Share over 1"),
@@ -33,14 +28,6 @@ occupation_estimates <- wages_logit_weights %>%
   group_by(two_digit_occ) %>%
   summarise(main_est = Hmisc::wtd.quantile(replacement_rate_FPUC, weight, 0.5))
 
-#### Merge on replicate weights ####
-replicate_weights <- read_csv("analysis/input/covid/ASEC_2019_replicates.gz") %>%
-  select(serial = SERIAL,
-         pernum = PERNUM,
-         contains("REP"))
-
-
-
 logit_data <- read_csv("analysis/release/logit_data.csv")
 
 #alternate_logits <- read_rds( "analysis/release/random_deciles.rds")
@@ -54,146 +41,24 @@ logit_data <- read_csv("analysis/release/logit_data.csv")
 #And add it to the bootstrapped variance of the estimates
 
 
-get_sum_stats <- function(x){
-
-  boostrap_data <- logit_data %>%
-    sample_n(nrow(logit_data),
-             replace = TRUE)
-
-  deciles <- boostrap_data %>%
-    filter(job_loser) %>%
-    with(Hmisc::wtd.quantile(weekly_earnings,
-                             weight,
-                             seq(0, 1, length.out = 11)))
-  deciles[1] <- 0
-  deciles[11] <- Inf
-
-
-  logit_fit_boot <- boostrap_data %>%
-    mutate(inc_decile = cut(weekly_earnings, deciles),
-           two_digit_ind = as.factor(two_digit_ind),
-           job_loser = as.numeric(job_loser),
-           weight = weight/sum(weight)) %>% # rescale weights to avoid errors
-    glm(job_loser ~ inc_decile + two_digit_occ + two_digit_ind + state,
-        data = ., family = binomial(),
-        start = logit_fit$coefficients, #starting from main coefficients marginally speeds up calculation
-        weights = weight)
-
-
-  reweighted_replicates <- wages %>%
-    mutate(inc_decile = cut(weekly_earnings, deciles),
-           two_digit_ind = as.factor(two_digit_ind)) %>%
-    broom::augment(logit_fit_boot, newdata = .,
-                   type.predict = "response") %>%
-    left_join(replicate_weights) %>%
-    select(-REPWTP) %>%
-    select(replacement_rate_FPUC, two_digit_ind,
-           REPWTP_ORIG = weight,
-           two_digit_occ, state,
-           contains("REP"), weekly_earnings, .fitted) %>%
-    pivot_longer(cols = contains("REPWTP"),
-                 names_to = "index_group",
-                 values_to = "weight") %>%
-    mutate(weight = weight * .fitted)
-
-
-
-
-  main_estimates <- reweighted_replicates %>%
-    group_by(index_group) %>%
-    summarise(statistic = c(rep("Quantile", 3), "Share over 1"),
-              quantile = c(0.25, 0.5, 0.75, NA),
-              value = sum_stat(c(0.25, 0.5, 0.75, NA),
-                               replacement_rate_FPUC, weight),
-              type = "main")
-
-  state_estimates <- reweighted_replicates %>%
-    group_by(index_group, state) %>%
-    summarise(value = Hmisc::wtd.quantile(replacement_rate_FPUC, weight, 0.5),
-              type = "state")
-
-  occupation_estimates <- reweighted_replicates %>%
-    group_by(index_group, two_digit_occ) %>%
-    summarise(value = Hmisc::wtd.quantile(replacement_rate_FPUC, weight, 0.5))
-
-
-  all_estimates <- bind_rows(main_estimates, state_estimates, occupation_estimates)
-
-  original_weights <- all_estimates %>% filter(index_group == "REPWTP_ORIG") %>%
-    ungroup() %>%
-    transmute(statistic, quantile, type, state, two_digit_occ, orig_weight = value)
-
-  all_estimates %>%
-    filter(index_group != "REPWTP_ORIG") %>%
-    left_join(original_weights) %>%
-    group_by(quantile, type, state, two_digit_occ) %>%
-    summarise(var = 4/160 * sum((value - orig_weight) ^ 2),
-              mean = mean(value)) %>%
-    return()
-}
-
-
-if (run_bootstrap) {
-  set.seed(2020)
-  bootstrap_output <- future_map(1:3, safely(get_sum_stats))
-
-
-  bootstrap_output_df <- map(bootstrap_output, "result") %>%
-    bind_rows()
-
-  confidence_intervals <- bootstrap_output_df %>%
-    filter(type == "main") %>%
-    group_by(quantile) %>%
-    summarise(e_v = mean(var),
-              v_e = var(mean)) %>%
-    transmute(quantile,
-              `Std. Error` = sqrt(e_v + v_e)) %>%
-    left_join(select(robustness_regular, -type)) %>%
-    mutate(ci_lower  = value - 1.96 * `Std. Error`,
-           ci_upper = value + 1.96 * `Std. Error`) %>%
-    select(-value) %>%
-    pivot_longer(c("Std. Error", "ci_lower", "ci_upper"), names_to = "type", values_to = "value")
-
-
-  bootstrap_state_df <- bootstrap_output_df %>%
-    filter(type == "state") %>%
-    bind_rows() %>%
-    group_by(state) %>%
-    summarise(e_v = mean(var),
-              v_e = var(mean)) %>%
-    transmute(state,
-              `Std. Error` = sqrt(e_v + v_e))
-
-  write_csv(bootstrap_state_df, "analysis/release/state_SEs.csv")
-
-} else {
-  confidence_intervals <- tibble(type = "Std. Error",
-                                 statistic = c(rep("Quantile", 3), "Share over 1"),
-                                 quantile = c(0.25, 0.5, 0.75, NA),
-                                 value = NA)
-
-}
-
 
 
 
 ### Check the effect of removing tipped occupations
 
-additional_codes <- read_csv("analysis/input/isaac_tipping.csv")$code
 
 occ_2019 <- read_csv("analysis/input/occ_2019.csv") %>%
-  mutate(tip_commission = !is.na(tip_commission) | str_pad(occupation, pad = "0",width =  4, side = "left") %in% additional_codes,
-         occupation = as.character(occupation))
+  mutate(occupation = as.character(occupation))
 
 wages_with_tips <- wages_logit_weights  %>%
   mutate(occupation_full = as.character(occupation_full)) %>%
   left_join(occ_2019 %>% filter(tip_commission), by = c(occupation_full = "occupation")) %>%
   select(weight, tip_commission, contains("replacement_rate"))
 
-stats_for_text <- add_row(stats_for_text,
-                          stat_name = "Share in tipped wage",
-                          stat_value = with(wages_with_tips,
-                                            Hmisc::wtd.mean(!is.na(tip_commission), weight)))
+tipped_wage <- tibble(stat_name = "Share in tipped wage",
+                      stat_value = with(wages_with_tips,
+                                            Hmisc::wtd.mean(!is.na(tip_commission), weight))
+                      )
 
 
 robustness_tips <- wages_with_tips %>%
@@ -273,7 +138,7 @@ robustness_benefits_payroll <- wages_2017 %>%
                              rep_rate, weight))
 
 
-bind_rows(robustness_regular, confidence_intervals, non_wage_income,
+bind_rows(robustness_regular, non_wage_income,
           robustness_tips, include_PUA,
           robustness_benefits, robustness_benefits_payroll) %>%
   pivot_wider(names_from = "type",
@@ -298,14 +163,22 @@ merge_ses <- function(gt, cols){
   return(gt)
 }
 
-relabel <-
 
 
-ses <- read_csv("analysis/input/bootstrap.csv") %>%
-  group_by(quantile, type, state) %>%
+ses <- read_csv("analysis/input/bootstrap_output.csv") %>%
+  group_by(quantile, type, state, occupation) %>%
   summarise(e_v = mean(var),
             v_e = var(mean)) %>%
-  mutate(se = sqrt(e_v + v_e)) %>%
+  ungroup() %>%
+  mutate(se = sqrt(e_v + v_e))
+
+median_variance <- ses %>% filter(type == "main") %>%
+  mutate(share_var_logit = v_e/(e_v + v_e)) %>%
+  filter(quantile == 0.5) %>%
+  transmute(stat_name = "Share of variance of median coming from logit model",
+            stat_value = share_var_logit)
+
+ses_for_robustness <- ses %>%
   mutate(type = case_when(type == "main" ~ "Main estimate",
                           type == "benefits and tax" ~ "Account for payroll tax and include non-wage compensation",
                           type == "benefits only" ~ "Include non-wage compensation",
@@ -313,14 +186,15 @@ ses <- read_csv("analysis/input/bootstrap.csv") %>%
                           type == "no tipping" ~ "Drop tipped occupations",
                           type == "payroll" ~ "Account for payroll tax",
                           type == "PUA_recipiency" ~ "Include PUA recipients")) %>%
-  filter(is.na(state)) %>%
-  select(-state, -e_v, -v_e)
+  filter(is.na(state), is.na(occupation)) %>%
+  select(-state, -occupation, -e_v, -v_e)
+
 
 
 bind_rows(robustness_regular, non_wage_income,
           robustness_tips, payroll_tax, include_PUA,
           robustness_benefits, robustness_benefits_payroll) %>%
-  left_join(ses) %>%
+  left_join(ses_for_robustness) %>%
   mutate(quantile = if_else(is.na(quantile), "Share over 1", scales::ordinal(quantile*100)),
          type = factor(type, levels = c("Main estimate",
                                         "Include non-wage compensation",
@@ -359,3 +233,16 @@ bind_rows(robustness_regular, non_wage_income,
   str_replace("\\\\multicolumn\\{1\\}\\{l\\}\\{ \\} \\\\\\\\Main estimate", "Main estimate") %>%
   str_replace_all("longtable", "tabular") %>%
   write_lines(str_c("analysis/release/robustness.tex"))
+
+occupational_ses <- ses %>%
+  filter(!is.na(occupation)) %>%
+  select(occupation, se) %>%
+  write_csv("analysis/release/occupation_SEs.csv")
+
+occupational_ses %>%
+  pull(se) %>%
+  max() %>%
+  expect_lt(0.044) %>%
+  test_that("Occupational standard errors are all less than 0.044")
+
+
