@@ -1,8 +1,8 @@
-US Unemployment Insurance Replacement Rates During the Pandemic - Ganong, Noel, and Vavra
+# US Unemployment Insurance Replacement Rates During the Pandemic - Ganong, Noel, and Vavra
 
 All questions should be directed to ganong@uchicago.edu
 
-Scripts (in analysis/source)
+### Scripts (in analysis/source)
 
 master.R runs three scripts: process_basic_cps.R, plot_ui.R, and run_bootstraps.R. The running of these three scripts will internally source four
 other scripts: ui_calculator.py, prelim.R, graph_prelim.R, and generate_robustness_table.R.
@@ -22,8 +22,10 @@ prelim.R loads packages, defines occupation and industry codes, and sets working
 
 graph_prelim.R defines functions and settings for use in plot generation
 
+run_bootstraps.R runs the bootstrapping procedure that produces the standard errors in Table 2
 
-Inputs (in analysis/inputs)
+run_boot.sh is a shell script used to run the script run_bootstraps.R 
+### Raw Data (in analysis/inputs)
 
 BAM_Q2_2019.csv, BAM_2018_benchmarks.csv are from the Benefits Accuracy Measurement survey by the Department of Labor
 
@@ -34,4 +36,5 @@ ASEC_1719.csv.gz is from the 2017-2019 IPUMS ASEC supplements
 basic_cps.csv.gz is the 2020 IPUMS CPS
 
 replicates_1719.csv.gz is the table of replicate weights from the 2017-2019 IPUMS ASEC supplements
+
 cpiauscl.csv is monthly CPI data
