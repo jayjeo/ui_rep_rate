@@ -1,28 +1,24 @@
-source("analysis/source/prelim.R")
+##### it works. 
 
+setwd("E:/Dropbox/Study/GitHub/ui_rep_rate")
+
+source("analysis/source/prelim.R")
 
 library(gt)
 
-#the benefits calculator is written in python.
-#we call the calculator in R using the reticulate package
-#the function we use is calc_weekly_state_quarterly()
-#which takes 4 quarters of total earnings as the first four arguments
-#and state as a 5th argument and returns a weekly benefit amount.
-library(reticulate)
-#if (Sys.getenv()[["USER"]] == "peterganong") {
-#  use_condaenv()
-#} else {
+library(reticulate) #package to call Python functions from R.
 
-if(Sys.getenv()[["USERNAME"]] == "rosha"){
-use_condaenv("C:\\Users\\rosha\\anaconda3\\envs\\for_calc", required = TRUE)
-} else {
-  use_condaenv("C:\\Users\\probert2\\AppData\\local\\Continuum\\anaconda3\\envs\\for_calc",
-               required = TRUE)
-}
-#}
+conda_list()
+conda_list()[[1]][1] %>% 
+  use_condaenv(required = TRUE)
+
 setwd("../ui_calculator/")
-source_python("source/ui_calculator.py")
+source_python("ui_calculator.py")
 setwd(make_path("./"))
+
+
+
+library(tidyverse)
 
 stats_for_text <- tibble(stat_name = character(),
                          stat_value = numeric())
@@ -162,6 +158,10 @@ write_csv(wages_2017, "analysis/release/wages_with_replacement_rates_2017.csv")
 #can read in the CSV on disk if trying to check something quickly
 wages <- read_csv("analysis/release/wages_with_replacement_rates.csv")
 wages_2017 <- read_csv( "analysis/release/wages_with_replacement_rates_2017.csv")
+
+
+
+
 
 #### Histogram of replacement rates ####
 
@@ -821,6 +821,12 @@ fixed_supp_hist <- wages_logit_weights %>%
 ggsave("analysis/release/fixed_supp_hist.png", fixed_supp_hist, width = 8, height = 4.5)
 
 
+
+
+
+
+
+
 #### Benefits Map ####
 library(tidyverse)
 library(geojsonio)
@@ -857,9 +863,9 @@ standard_errors <- read_csv("analysis/input/bootstrap_output.csv") %>%
   pivot_wider(names_from = "type",
               values_from = "se")
 merge_ses <- function(gt, cols){
-
+  
   all_cols <- names(gt[["_data"]])
-
+  
   for (col in cols) {
     gt <- gt %>%
       cols_merge(
@@ -918,6 +924,14 @@ state_values %>%
   str_replace_all("\\} &", "\\} & &") %>%
   str_remove(".*\\n") %>% #remove extraneous first line
   write_lines(str_c("analysis/release/state_table.tex"))
+
+
+
+
+
+
+
+
 
 state_values %>%
   write_csv(str_c(out_table_path, "rep_rate_state.csv"))

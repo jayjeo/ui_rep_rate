@@ -1,3 +1,5 @@
+setwd("E:/Dropbox/Study/GitHub/ui_rep_rate")
+
 library(tidyverse)
 library(lubridate)
 library(yaml)
@@ -7,7 +9,6 @@ library("RColorBrewer")
 matches <- dplyr::matches
 
 make_path <- is_git_root$make_fix_file(".") #nolint
-
 
 out_path <- str_c(make_path(), "/analysis/release/")
 out_table_path <- str_c(out_path, "stats_in_figures/")

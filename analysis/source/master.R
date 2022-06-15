@@ -1,5 +1,5 @@
 
-
+setwd("E:/Dropbox/Study/GitHub/ui_rep_rate")
 
 #start by producing decile reweightings which are used in both scripts
 source("analysis/source/process_basic_cps.R")
